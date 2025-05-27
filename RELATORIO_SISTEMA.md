@@ -35,20 +35,62 @@ fl-dp-sa/
 
 ```python
 class FMNISTNet(nn.Module):
-    - 3 Camadas Convolucionais (32, 64, 128 filtros)
-    - MaxPooling 2x2 após cada convolução
-    - 3 Camadas Fully Connected (256, 128, 10 neurônios)
-    - Dropout (0.25, 0.5) para regularização
-    - Ativação ReLU
+    # Camadas Convolucionais
+    conv1: Conv2d(1 → 32 filtros, kernel 3x3, padding=1)
+    conv2: Conv2d(32 → 64 filtros, kernel 3x3, padding=1)
+    conv3: Conv2d(64 → 128 filtros, kernel 3x3, padding=1)
+
+    # Pooling e Regularização
+    MaxPool2d(2x2) após cada convolução
+    Dropout(0.25) após primeira FC
+    Dropout(0.5) após segunda FC
+
+    # Camadas Fully Connected
+    fc1: Linear(128×3×3 → 256 neurônios)
+    fc2: Linear(256 → 128 neurônios)
+    fc3: Linear(128 → 10 classes)
 ```
 
-**Características:**
+**Explicação Detalhada dos Parâmetros:**
 
-- **Input**: Imagens 28x28x1 (Fashion-MNIST)
+**Camadas Convolucionais:**
+
+- **32, 64, 128**: Número de **filtros/canais de saída** em cada camada
+  - Conv1: 1 canal (grayscale) → 32 mapas de características
+  - Conv2: 32 canais → 64 mapas de características
+  - Conv3: 64 canais → 128 mapas de características
+- **Kernel 3x3**: Tamanho do filtro convolucional (janela deslizante)
+- **Padding=1**: Adiciona bordas para manter dimensões espaciais
+
+**Transformação das Dimensões:**
+
+```
+Input: 28×28×1 (altura×largura×canais)
+↓ Conv1 + Pool: 14×14×32
+↓ Conv2 + Pool: 7×7×64
+↓ Conv3 + Pool: 3×3×128
+↓ Flatten: 1152 (3×3×128)
+```
+
+**Camadas Fully Connected:**
+
+- **1152 → 256**: Primeira FC reduz dimensionalidade drasticamente
+- **256 → 128**: Segunda FC continua compressão da representação
+- **128 → 10**: Camada final mapeia para as 10 classes do Fashion-MNIST
+
+**Dropout:**
+
+- **0.25**: Remove 25% dos neurônios aleatoriamente (regularização leve)
+- **0.5**: Remove 50% dos neurônios aleatoriamente (regularização forte)
+
+**Características Técnicas:**
+
+- **Input**: Imagens 28x28x1 (Fashion-MNIST grayscale)
 - **Output**: 10 classes (roupas/acessórios)
 - **Parâmetros**: ~1.2M parâmetros treináveis
 - **Otimizador**: Adam (lr=0.001)
 - **Loss**: CrossEntropyLoss
+- **Ativação**: ReLU em todas as camadas (exceto saída)
 
 ### 2. Dataset Non-IID (`dataset.py`)
 
