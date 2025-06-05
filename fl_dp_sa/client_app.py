@@ -41,7 +41,7 @@ class FMNISTClient(NumPyClient):
             self.model, 
             self.train_loader, 
             self.val_loader,
-            epochs=3,  # Poucas épocas para acelerar o treinamento
+            epochs=1,
             lr=0.001,
             device=self.device
         )

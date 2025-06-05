@@ -84,12 +84,14 @@ Este projeto implementa uma simulação comparativa entre o algoritmo FedAvg tra
 ## 🚀 Instalação e Configuração
 
 ### 1. Clonar o Repositório
+
 ```bash
 git clone <repository-url>
 cd fl-dp-sa
 ```
 
 ### 2. Criar Ambiente Virtual
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # Linux/Mac
@@ -98,12 +100,14 @@ source .venv/bin/activate  # Linux/Mac
 ```
 
 ### 3. Atualizar pip e Instalar Dependências
+
 ```bash
 pip install --upgrade pip
 pip install -e .
 ```
 
 ### 4. Verificar Instalação
+
 ```bash
 python test_setup.py
 ```
@@ -111,6 +115,7 @@ python test_setup.py
 ## 🎯 Executando a Simulação
 
 ### Simulação Completa (Recomendado)
+
 Execute o script principal que compara ambas as estratégias:
 
 ```bash
@@ -118,12 +123,14 @@ python simulation.py
 ```
 
 Este comando irá:
+
 1. Executar simulação com FedAvg (20 rodadas)
 2. Executar simulação com Power of Choice (20 rodadas)
 3. Gerar gráficos comparativos
 4. Exibir resumo dos resultados
 
 ### Teste Rápido
+
 Para verificar se tudo está funcionando:
 
 ```bash
@@ -135,16 +142,19 @@ python test_setup.py
 A simulação gera automaticamente:
 
 ### Gráficos Comparativos
+
 - **Evolução da Acurácia Global**: Comparação da acurácia ao longo das rodadas
-- **Evolução da Loss Global**: Comparação da loss ao longo das rodadas  
+- **Evolução da Loss Global**: Comparação da loss ao longo das rodadas
 - **Acurácia Média dos Clientes**: Performance média dos clientes participantes
 - **Comparação Final**: Acurácia final de ambas as estratégias
 
 ### Arquivos Gerados
+
 - `results/comparison_fedavg_vs_powerofchoice.png`: Gráfico em alta resolução
 - `results/comparison_fedavg_vs_powerofchoice.pdf`: Versão em PDF para relatórios
 
 ### Métricas Coletadas
+
 - Acurácia global por rodada
 - Loss global por rodada
 - Acurácia média dos clientes participantes
@@ -154,21 +164,24 @@ A simulação gera automaticamente:
 ## ⚙️ Configurações Principais
 
 ### Parâmetros do Dataset
+
 ```python
 num_clients = 50        # Número total de clientes
 alpha = 0.5            # Concentração Dirichlet (menor = mais Non-IID)
 ```
 
 ### Parâmetros de Treinamento
+
 ```python
 num_rounds = 20        # Rodadas de treinamento federado
 clients_per_round = 10 # Clientes por rodada (20% de 50)
-local_epochs = 3       # Épocas de treinamento local
+local_epochs = 1       # Épocas de treinamento local
 batch_size = 32        # Tamanho do batch
 learning_rate = 0.001  # Taxa de aprendizado
 ```
 
 ### Parâmetros Power of Choice
+
 ```python
 d = 3                  # Número de candidatos considerados por slot
 ```
@@ -193,12 +206,14 @@ fl-dp-sa/
 ## 📈 Resultados Esperados
 
 ### Power of Choice vs FedAvg
+
 - **Convergência**: Power of Choice tende a convergir mais rapidamente
 - **Acurácia Final**: Melhoria esperada de 2-5% na acurácia final
 - **Estabilidade**: Menor variância entre rodadas
 - **Eficiência**: Melhor utilização de clientes com boa performance
 
 ### Fatores de Performance
+
 - **Heterogeneidade dos Dados**: Maior benefício em cenários mais Non-IID
 - **Número de Clientes**: Benefício aumenta com mais clientes disponíveis
 - **Parâmetro d**: Valores entre 2-5 geralmente oferecem melhor trade-off
@@ -206,6 +221,7 @@ fl-dp-sa/
 ## 🔧 Otimizações Realizadas
 
 ### Código Limpo e Eficiente
+
 - ✅ Removidos arquivos redundantes (`quick_test_simulation.py`, `simple_simulation.py`, `task.py`)
 - ✅ Eliminados imports não utilizados
 - ✅ Simplificadas classes abstratas desnecessárias
@@ -213,6 +229,7 @@ fl-dp-sa/
 - ✅ Código modular e bem estruturado
 
 ### Dependências Mínimas
+
 ```toml
 dependencies = [
     "flwr[simulation]>=1.18.0",
@@ -232,6 +249,7 @@ python test_setup.py
 ```
 
 Verifica:
+
 - ✅ Criação e distribuição do dataset Non-IID
 - ✅ Inicialização e forward pass do modelo
 - ✅ Processo de treinamento
@@ -240,17 +258,20 @@ Verifica:
 ## 📝 Notas Técnicas
 
 ### Modelo CNN
+
 - **Arquitetura**: 3 camadas convolucionais + 3 fully connected
 - **Parâmetros**: 422,026 parâmetros treináveis
 - **Regularização**: Dropout (0.25 e 0.5)
 - **Otimizador**: Adam com lr=0.001
 
 ### Distribuição Non-IID
+
 - **Método**: Distribuição Dirichlet com α=0.5
 - **Heterogeneidade**: Cada cliente tem distribuição diferente de classes
 - **Balanceamento**: Evita clientes sem dados
 
 ### Power of Choice
+
 - **Algoritmo**: Para cada slot, considera d=3 candidatos e escolhe o melhor
 - **Métrica**: Score baseado na acurácia histórica (últimas 5 rodadas)
 - **Adaptação**: Score neutro para clientes novos
@@ -258,6 +279,7 @@ Verifica:
 ## 🤝 Contribuições
 
 Para contribuir com o projeto:
+
 1. Faça fork do repositório
 2. Crie uma branch para sua feature
 3. Execute os testes: `python test_setup.py`

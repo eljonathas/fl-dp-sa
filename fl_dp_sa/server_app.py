@@ -4,7 +4,7 @@ import torch
 import flwr as fl
 from flwr.server import ServerApp, ServerConfig
 from flwr.common import Context
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, Tuple, Optional
 
 from .dataset import FMNISTNonIID
 from .model import FMNISTNet, evaluate_model, get_model_parameters
@@ -82,7 +82,7 @@ def create_server_app(strategy_name: str = "fedavg"):
             min_available_clients=50,
             evaluate_fn=get_evaluate_fn(dataset),
             initial_parameters=fl.common.ndarrays_to_parameters(initial_parameters),
-            d=3,  # Power of choice com d=3
+            d=20,  # Power of choice com d=20 (mais candidatos para melhor seleção)
         )
     else:
         raise ValueError(f"Estratégia desconhecida: {strategy_name}")
