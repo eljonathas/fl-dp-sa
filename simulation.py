@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 """
-Simulação de Aprendizado Federado: FedAvg vs Power of Choice
-Dataset: Fashion-MNIST com distribuição Non-IID
+Simulação comparativa entre FedAvg e Power of Choice
 """
 
 import os
 import time
 import numpy as np
 import matplotlib.pyplot as plt
+from typing import Dict, List
 import flwr as fl
 from flwr.simulation import start_simulation
-from typing import Dict, List
 
 from fl_dp_sa.dataset import FMNISTNonIID
 from fl_dp_sa.client_app import create_client_fn
@@ -30,10 +29,11 @@ def run_simulation(strategy_name: str, num_rounds: int = 20) -> Dict[str, List[f
     """
     print(f"\n{'='*60}")
     print(f"Executando simulação: {strategy_name.upper()}")
+    print(f"Rodadas: {num_rounds}")
     print(f"{'='*60}")
     
     # Criar dataset
-    dataset = FMNISTNonIID(num_clients=50, alpha=0.5)
+    dataset = FMNISTNonIID(num_clients=20, alpha=0.1)  # Menos non-IID para melhor aprendizado
     
     # Criar função de cliente
     client_fn = create_client_fn(dataset)
@@ -47,7 +47,7 @@ def run_simulation(strategy_name: str, num_rounds: int = 20) -> Dict[str, List[f
     # Executar simulação
     history = start_simulation(
         client_fn=client_fn,
-        num_clients=50,
+        num_clients=20,  # Atualizado para 20 clientes
         config=fl.server.ServerConfig(num_rounds=num_rounds),
         strategy=strategy,
         client_resources={"num_cpus": 1, "num_gpus": 0.0},
@@ -68,17 +68,26 @@ def run_simulation(strategy_name: str, num_rounds: int = 20) -> Dict[str, List[f
     }
     
     # Extrair métricas globais do histórico
-    # O histórico tem losses_centralized e metrics_centralized
     if hasattr(history, 'losses_centralized') and history.losses_centralized:
-        # losses_centralized é uma lista de tuplas (round, loss)
         for round_num, loss in history.losses_centralized:
             metrics["global_loss"].append(loss)
     
     if hasattr(history, 'metrics_centralized') and history.metrics_centralized:
-        # metrics_centralized é um dicionário onde cada chave tem uma lista de tuplas (round, value)
         if 'accuracy' in history.metrics_centralized:
             for round_num, accuracy in history.metrics_centralized['accuracy']:
                 metrics["global_accuracy"].append(accuracy)
+    
+    # Debug: imprimir estatísticas das métricas
+    print(f"\nEstatísticas das métricas para {strategy_name}:")
+    print(f"  Acurácia global: {len(metrics['global_accuracy'])} valores")
+    print(f"  Loss global: {len(metrics['global_loss'])} valores")
+    print(f"  Acurácia de clientes: {len(metrics['round_accuracies'])} valores")
+    print(f"  Loss de clientes: {len(metrics['round_losses'])} valores")
+    
+    if metrics['round_accuracies']:
+        print(f"  Acurácia final (clientes): {metrics['round_accuracies'][-1]:.2f}%")
+    if metrics['global_accuracy']:
+        print(f"  Acurácia final (global): {metrics['global_accuracy'][-1]:.2f}%")
     
     return metrics
 
@@ -86,11 +95,6 @@ def run_simulation(strategy_name: str, num_rounds: int = 20) -> Dict[str, List[f
 def plot_comparison(fedavg_metrics: Dict, poc_metrics: Dict, save_path: str = "results"):
     """
     Cria gráficos comparativos entre FedAvg e Power of Choice
-    
-    Args:
-        fedavg_metrics: Métricas do FedAvg
-        poc_metrics: Métricas do Power of Choice
-        save_path: Diretório para salvar os gráficos
     """
     # Criar diretório se não existir
     os.makedirs(save_path, exist_ok=True)
@@ -109,7 +113,7 @@ def plot_comparison(fedavg_metrics: Dict, poc_metrics: Dict, save_path: str = "r
     print(f"  round_losses: {len(poc_metrics['round_losses'])} valores")
     
     # Configurar estilo dos gráficos
-    plt.style.use('seaborn-v0_8')
+    plt.style.use('default')  # Mudança para estilo mais compatível
     fig, axes = plt.subplots(2, 2, figsize=(15, 12))
     fig.suptitle('Comparação: FedAvg vs Power of Choice\nDataset: Fashion-MNIST (Non-IID)', 
                  fontsize=16, fontweight='bold')
@@ -174,35 +178,21 @@ def plot_comparison(fedavg_metrics: Dict, poc_metrics: Dict, save_path: str = "r
     ax3.legend()
     ax3.grid(True, alpha=0.3)
     
-    # 4. Comparação de Performance Final
+    # 4. Loss dos Clientes
     ax4 = axes[1, 1]
-    strategies = ['FedAvg', 'Power of Choice']
+    if fedavg_metrics["round_losses"]:
+        rounds = range(1, len(fedavg_metrics["round_losses"]) + 1)
+        ax4.plot(rounds, fedavg_metrics["round_losses"], 'b-o', label='FedAvg', linewidth=2, markersize=6)
     
-    # Usar acurácia global se disponível, senão usar acurácia dos clientes
-    fedavg_final_acc = (fedavg_metrics["global_accuracy"][-1] if fedavg_metrics["global_accuracy"] 
-                       else fedavg_metrics["round_accuracies"][-1] if fedavg_metrics["round_accuracies"] else 0)
-    poc_final_acc = (poc_metrics["global_accuracy"][-1] if poc_metrics["global_accuracy"] 
-                    else poc_metrics["round_accuracies"][-1] if poc_metrics["round_accuracies"] else 0)
-    final_accuracies = [fedavg_final_acc, poc_final_acc]
+    if poc_metrics["round_losses"]:
+        rounds = range(1, len(poc_metrics["round_losses"]) + 1)
+        ax4.plot(rounds, poc_metrics["round_losses"], 'r-s', label='Power of Choice', linewidth=2, markersize=6)
     
-    # Gráfico de barras para acurácia final
-    bars = ax4.bar(strategies, final_accuracies, color=['blue', 'red'], alpha=0.7)
-    ax4.set_ylabel('Acurácia Final (%)')
-    ax4.set_title('Comparação de Performance Final')
-    
-    # Adicionar valores nas barras
-    for bar, acc in zip(bars, final_accuracies):
-        height = bar.get_height()
-        if height > 0:  # Só adicionar texto se há dados
-            ax4.text(bar.get_x() + bar.get_width()/2., height + 0.5,
-                    f'{acc:.2f}%', ha='center', va='bottom', fontweight='bold')
-    
-    ax4.grid(True, alpha=0.3, axis='y')
-    
-    # Adicionar nota sobre fonte dos dados
-    if not fedavg_metrics["global_accuracy"] and not poc_metrics["global_accuracy"]:
-        ax4.text(0.5, -0.15, 'Nota: Usando acurácia média dos clientes (avaliação centralizada não disponível)', 
-                ha='center', va='center', transform=ax4.transAxes, fontsize=10, style='italic')
+    ax4.set_xlabel('Rodadas de Treinamento')
+    ax4.set_ylabel('Loss Média dos Clientes')
+    ax4.set_title('Evolução da Loss dos Clientes')
+    ax4.legend()
+    ax4.grid(True, alpha=0.3)
     
     plt.tight_layout()
     
@@ -213,6 +203,50 @@ def plot_comparison(fedavg_metrics: Dict, poc_metrics: Dict, save_path: str = "r
     print(f"\nGráficos salvos em: {save_path}/")
     
     # Mostrar gráfico
+    plt.show()
+
+
+def plot_performance_bars(fedavg_metrics: Dict, poc_metrics: Dict, save_path: str = "results"):
+    """Gráfico de barras para comparação final"""
+    
+    # Usar acurácia global se disponível, senão usar acurácia dos clientes
+    fedavg_final_acc = (fedavg_metrics["global_accuracy"][-1] if fedavg_metrics["global_accuracy"] 
+                       else fedavg_metrics["round_accuracies"][-1] if fedavg_metrics["round_accuracies"] else 0)
+    poc_final_acc = (poc_metrics["global_accuracy"][-1] if poc_metrics["global_accuracy"] 
+                    else poc_metrics["round_accuracies"][-1] if poc_metrics["round_accuracies"] else 0)
+    
+    # Criar gráfico de barras
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+    
+    # Acurácia
+    strategies = ['FedAvg', 'Power of Choice']
+    final_accuracies = [fedavg_final_acc, poc_final_acc]
+    
+    bars1 = ax1.bar(strategies, final_accuracies, color=['blue', 'red'], alpha=0.7)
+    ax1.set_ylabel('Acurácia Final (%)')
+    ax1.set_title('Comparação de Acurácia Final')
+    
+    # Adicionar valores nas barras
+    for bar, acc in zip(bars1, final_accuracies):
+        height = bar.get_height()
+        if height > 0:
+            ax1.text(bar.get_x() + bar.get_width()/2., height + 0.5,
+                    f'{acc:.2f}%', ha='center', va='bottom', fontweight='bold')
+    
+    # Tempo de execução
+    times = [fedavg_metrics["duration"], poc_metrics["duration"]]
+    bars2 = ax2.bar(strategies, times, color=['blue', 'red'], alpha=0.7)
+    ax2.set_ylabel('Tempo de Execução (segundos)')
+    ax2.set_title('Comparação de Tempo de Execução')
+    
+    # Adicionar valores nas barras
+    for bar, time_val in zip(bars2, times):
+        height = bar.get_height()
+        ax2.text(bar.get_x() + bar.get_width()/2., height + 1,
+                f'{time_val:.1f}s', ha='center', va='bottom', fontweight='bold')
+    
+    plt.tight_layout()
+    plt.savefig(f"{save_path}/performance_comparison.png", dpi=300, bbox_inches='tight')
     plt.show()
 
 
@@ -266,27 +300,24 @@ def main():
     print("Dataset: Fashion-MNIST com distribuição Non-IID")
     print("Comparação: FedAvg vs Power of Choice")
     print("="*60)
-    print("CORREÇÕES IMPLEMENTADAS:")
-    print("✅ Algoritmo Power of Choice conforme artigo original")
-    print("✅ Seleção baseada na LOCAL LOSS (não acurácia)")
-    print("✅ Implementação correta do método configure_fit")
-    print("✅ Parâmetro d otimizado para 50 clientes")
-    print("✅ Histórico de losses para seleção inteligente")
-    print("="*60)
     
     # Configurações
-    NUM_ROUNDS = 20  # Reduzido para análise mais rápida
+    NUM_ROUNDS = 20
     
     # Executar simulações
     print("\n1. Executando FedAvg...")
-    fedavg_metrics = run_simulation("fedavg", NUM_ROUNDS)
+    fedavg_metrics = run_simulation("fedavg", NUM_ROUNDS)  # CORREÇÃO: usar NUM_ROUNDS ao invés de 1
     
     print("\n2. Executando Power of Choice...")
     poc_metrics = run_simulation("powerofchoice", NUM_ROUNDS)
     
     # Gerar gráficos comparativos
     print("\n3. Gerando gráficos comparativos...")
-    plot_comparison(fedavg_metrics, poc_metrics)
+    plot_comparison(fedavg_metrics, poc_metrics)  # CORREÇÃO: remover lista desnecessária
+    
+    # Gráfico de barras de performance
+    print("\n4. Gerando gráfico de barras...")
+    plot_performance_bars(fedavg_metrics, poc_metrics)
     
     # Imprimir resumo
     print_summary(fedavg_metrics, poc_metrics)

@@ -36,13 +36,12 @@ class FMNISTClient(NumPyClient):
         # Definir parâmetros recebidos do servidor
         self.set_parameters(parameters)
         
-        # Treinar modelo
         train_accuracy, val_accuracy = train_model(
             self.model, 
             self.train_loader, 
             self.val_loader,
-            epochs=1,
-            lr=0.001,
+            epochs=1, 
+            lr=0.001,  
             device=self.device
         )
         

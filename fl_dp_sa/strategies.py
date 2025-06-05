@@ -18,80 +18,80 @@ class PowerOfChoiceSelection:
             d: Número de clientes candidatos a serem considerados (power of choice)
         """
         self.d = d
-        self.client_losses = {}  # Histórico de loss local dos clientes
-        self.current_round_losses = {}  # Loss atual dos clientes para seleção
-        self.round_count = 0
+        self.client_losses = {}
+        self.client_ratios = {}
+        self.num_clients = 0
     
-    def update_client_loss(self, client_id: str, local_loss: float):
-        """Atualiza o histórico de loss local de um cliente"""
-        if client_id not in self.client_losses:
-            self.client_losses[client_id] = []
-        
-        self.client_losses[client_id].append(local_loss)
-        
-        # Manter apenas os últimos 5 valores para melhor histórico
-        if len(self.client_losses[client_id]) > 5:
-            self.client_losses[client_id] = self.client_losses[client_id][-5:]
+    def update_client_info(self, client_id: str, local_loss: float, data_ratio: float = None):
+        """Atualiza informações do cliente"""
+        self.client_losses[client_id] = local_loss
+        if data_ratio is not None:
+            self.client_ratios[client_id] = data_ratio
     
-    def get_client_loss_score(self, client_id: str) -> float:
-        """
-        Retorna o score de loss de um cliente
-        Clientes com maior loss local têm prioridade (como no artigo original)
-        """
-        if client_id not in self.client_losses or not self.client_losses[client_id]:
-            # Para clientes sem histórico, usar loss aleatória para dar chance igual
-            return random.uniform(0.5, 2.0)
-        
-        # Usar a média das últimas losses como score, priorizando perdas maiores
-        return np.mean(self.client_losses[client_id])
+    def set_client_ratios(self, client_ids: List[str]):
+        """Define ratios uniformes se não especificados"""
+        if not self.client_ratios:
+            ratio = 1.0 / len(client_ids)
+            for client_id in client_ids:
+                self.client_ratios[client_id] = ratio
+        self.num_clients = len(client_ids)
     
     def select_clients_power_of_choice(self, available_clients: List[ClientProxy], num_clients: int) -> List[ClientProxy]:
         """
-        Implementa o algoritmo Power of Choice original:
+        Implementa o algoritmo Power of Choice original do artigo:
         
-        1. Para cada slot de cliente:
-           - Seleciona d candidatos aleatoriamente
-           - Escolhe o candidato com maior loss local (ou score aleatório se sem histórico)
-           - Remove o selecionado da lista de disponíveis
-        
-        Args:
-            available_clients: Lista de ClientProxy disponíveis
-            num_clients: Número de clientes a selecionar
-            
-        Returns:
-            Lista de ClientProxy selecionados
+        1. Se primeira rodada (sem histórico), seleciona m clientes aleatoriamente  
+        2. Caso contrário:
+           - Seleciona d clientes com probabilidade proporcional ao tamanho do dataset (sem reposição)
+           - Ordena por loss decrescente
+           - Seleciona os top m clientes
         """
-        selected_clients = []
-        remaining_clients = available_clients.copy()
+        client_ids = [self._get_client_id(client) for client in available_clients]
+        self.set_client_ratios(client_ids)
         
-        # Se não temos histórico suficiente, aumentar aleatoriedade
-        has_history = len(self.client_losses) > 0
-        
-        for _ in range(min(num_clients, len(available_clients))):
-            if not remaining_clients:
-                break
-            
-            # Passo 1: Selecionar d candidatos aleatoriamente
-            candidates = random.sample(
-                remaining_clients, 
-                min(self.d, len(remaining_clients))
+        # Primeira rodada: seleção aleatória uniforme (como no artigo original)
+        if not self.client_losses:
+            selected_indices = np.random.choice(
+                len(available_clients), 
+                size=min(num_clients, len(available_clients)), 
+                replace=False
             )
-            
-            # Passo 2: Escolher baseado em loss ou aleatoriedade inteligente
-            if has_history and self.round_count > 2:
-                # Usar histórico de losses para seleção inteligente
-                best_client = max(candidates, key=lambda client: self.get_client_loss_score(self._get_client_id(client)))
-            else:
-                # Primeiras rodadas: seleção aleatória entre candidatos (ainda é power of choice)
-                best_client = random.choice(candidates)
-            
-            selected_clients.append(best_client)
-            remaining_clients.remove(best_client)
+            return [available_clients[i] for i in selected_indices]
+        
+        # Power of Choice Algorithm (como implementado no artigo)
+        # Passo 1: Selecionar d candidatos com probabilidade proporcional ao dataset size
+        ratios = np.array([self.client_ratios.get(cid, 1.0/len(client_ids)) for cid in client_ids])
+        ratios = ratios / ratios.sum()  # Normalizar para garantir soma = 1
+        
+        d_candidates = min(self.d, len(available_clients))
+        
+        # Seleção com reposição para permitir probabilidades proporcionais
+        candidate_indices = np.random.choice(
+            len(available_clients), 
+            p=ratios, 
+            size=d_candidates, 
+            replace=False
+        )
+        
+        # Passo 2: Ordenar candidatos selecionados por loss decrescente
+        candidates_with_loss = []
+        for idx in candidate_indices:
+            client_id = client_ids[idx]
+            loss = self.client_losses.get(client_id, 0.0)
+            candidates_with_loss.append((loss, idx, available_clients[idx]))
+        
+        # Ordenar por loss decrescente (maior loss = maior prioridade)
+        candidates_with_loss.sort(key=lambda x: x[0], reverse=True)
+        
+        # Passo 3: Selecionar os top m clientes da lista ordenada
+        selected_clients = []
+        for i in range(min(num_clients, len(candidates_with_loss))):
+            selected_clients.append(candidates_with_loss[i][2])
         
         return selected_clients
     
     def _get_client_id(self, client: ClientProxy) -> str:
-        """Extrai ID do cliente de forma compatível"""
+        """Extrai ID do cliente"""
         if hasattr(client, 'cid'):
             return str(client.cid)
         else:
@@ -99,7 +99,7 @@ class PowerOfChoiceSelection:
 
 
 class FedAvgStrategy(FedAvg):
-    """Estratégia FedAvg tradicional com seleção aleatória"""
+    """Estratégia FedAvg tradicional"""
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -108,15 +108,18 @@ class FedAvgStrategy(FedAvg):
     
     def aggregate_fit(self, server_round: int, results: List[Tuple[ClientProxy, FitRes]], failures):
         """Agrega os resultados do treinamento"""
-        # Chamar agregação padrão do FedAvg
-        aggregated_parameters, aggregated_metrics = super().aggregate_fit(
-            server_round, results, failures
-        )
+        print(f"FedAvg - Rodada {server_round}: Recebidos {len(results)} resultados")
         
-        # Coletar métricas
+        # Coletar métricas ANTES da agregação
         if results:
-            accuracies = [res.metrics.get("accuracy", 0.0) for _, res in results]
-            losses = [res.metrics.get("loss", 0.0) for _, res in results]
+            accuracies = []
+            losses = []
+            
+            for _, fit_res in results:
+                accuracy = fit_res.metrics.get("accuracy", 0.0)
+                loss = fit_res.metrics.get("loss", 0.0)
+                accuracies.append(accuracy)
+                losses.append(loss)
             
             avg_accuracy = np.mean(accuracies)
             avg_loss = np.mean(losses)
@@ -124,20 +127,18 @@ class FedAvgStrategy(FedAvg):
             self.round_accuracies.append(avg_accuracy)
             self.round_losses.append(avg_loss)
             
-            print(f"Rodada {server_round} - FedAvg - Acurácia média: {avg_accuracy:.2f}%, Loss média: {avg_loss:.4f}")
+            print(f"Rodada {server_round} - FedAvg - Acurácia Média: {avg_accuracy:.2f}%, Loss Média: {avg_loss:.4f}")
+        
+        # Agregação padrão
+        aggregated_parameters, aggregated_metrics = super().aggregate_fit(
+            server_round, results, failures
+        )
         
         return aggregated_parameters, aggregated_metrics
 
 
 class PowerOfChoiceStrategy(FedAvg):
-    """
-    Implementação corrigida da estratégia Power of Choice conforme o artigo original.
-    
-    O algoritmo funciona da seguinte forma:
-    1. Seleciona um conjunto candidato de d clientes aleatoriamente
-    2. Escolhe entre esses candidatos baseado em critério de loss (ou aleatório inicialmente)
-    3. Repete até selecionar m clientes
-    """
+    """Estratégia Power of Choice implementada conforme o artigo original"""
     
     def __init__(self, d: int = 15, **kwargs):
         super().__init__(**kwargs)
@@ -145,83 +146,81 @@ class PowerOfChoiceStrategy(FedAvg):
         self.round_accuracies = []
         self.round_losses = []
         
-        print(f"Inicializando Power of Choice com d={d} candidatos")
+        print(f"Power of Choice iniciado com d={d}")
     
     def configure_fit(self, server_round: int, parameters: Parameters, client_manager) -> List[Tuple[ClientProxy, FitIns]]:
-        """
-        Configura a seleção de clientes usando Power of Choice
-        """
-        # Obter todos os clientes disponíveis
+        """Configura seleção de clientes usando Power of Choice"""
         available_clients = list(client_manager.all())
         
         if len(available_clients) == 0:
             return []
         
-        # Calcular número de clientes para seleção
         num_clients = max(1, int(len(available_clients) * self.fraction_fit))
         num_clients = min(num_clients, len(available_clients))
         
-        print(f"Rodada {server_round}: Power of Choice selecionando {num_clients} de {len(available_clients)} clientes")
+        print(f"Rodada {server_round}: Selecionando {num_clients} de {len(available_clients)} clientes")
         
-        # Atualizar contador de rodadas
-        self.selection_strategy.round_count = server_round
-        
-        # Aplicar Power of Choice - funciona desde a primeira rodada
+        # Aplicar Power of Choice
         selected_clients = self.selection_strategy.select_clients_power_of_choice(
             available_clients, num_clients
         )
         
-        # Debug: mostrar clientes selecionados
         selected_ids = [self.selection_strategy._get_client_id(client) for client in selected_clients]
         print(f"  Clientes selecionados: {selected_ids}")
         
-        # Se temos histórico, mostrar scores
+        # Debug: mostrar informações de seleção
         if self.selection_strategy.client_losses:
-            print(f"  Scores dos selecionados:")
+            print(f"  Histórico de losses disponível para {len(self.selection_strategy.client_losses)} clientes")
+            selected_losses = []
             for client in selected_clients:
                 client_id = self.selection_strategy._get_client_id(client)
-                score = self.selection_strategy.get_client_loss_score(client_id)
-                history = self.selection_strategy.client_losses.get(client_id, [])
-                print(f"    Cliente {client_id}: score={score:.4f}, histórico={len(history)} valores")
+                loss = self.selection_strategy.client_losses.get(client_id, 0.0)
+                selected_losses.append(loss)
+            print(f"  Losses dos selecionados: {[f'{l:.4f}' for l in selected_losses]}")
         
-        # Criar instruções de fit para os clientes selecionados
         fit_ins = FitIns(parameters, {})
         return [(client, fit_ins) for client in selected_clients]
     
     def aggregate_fit(self, server_round: int, results: List[Tuple[ClientProxy, FitRes]], failures):
-        """Agrega os resultados do treinamento e atualiza histórico de losses"""
+        """Agrega resultados e atualiza histórico de losses"""
         
-        # Atualizar scores dos clientes baseado na loss local (critério do artigo)
-        for client_proxy, fit_res in results:
-            # Extrair client ID
-            client_id = self.selection_strategy._get_client_id(client_proxy)
-            
-            # No artigo original, o critério é a LOCAL LOSS, não a acurácia
-            local_loss = fit_res.metrics.get("loss", 1.0)  # Default 1.0 se não encontrar
-            
-            # Atualizar histórico de losses
-            self.selection_strategy.update_client_loss(client_id, local_loss)
+        # Debug: verificar se há resultados
+        print(f"Power of Choice - Rodada {server_round}: Recebidos {len(results)} resultados")
         
-        # Chamar agregação padrão do FedAvg
-        aggregated_parameters, aggregated_metrics = super().aggregate_fit(
-            server_round, results, failures
-        )
-        
-        # Coletar métricas para análise
+        # Coletar métricas ANTES da agregação
         if results:
-            accuracies = [res.metrics.get("accuracy", 0.0) for _, res in results]
-            losses = [res.metrics.get("loss", 0.0) for _, res in results]
+            accuracies = []
+            losses = []
             
+            for client_proxy, fit_res in results:
+                client_id = self.selection_strategy._get_client_id(client_proxy)
+                
+                # Extrair métricas
+                accuracy = fit_res.metrics.get("accuracy", 0.0)
+                loss = fit_res.metrics.get("loss", 1.0)
+                
+                accuracies.append(accuracy)
+                losses.append(loss)
+                
+                # Atualizar histórico de losses para próxima rodada  
+                self.selection_strategy.update_client_info(client_id, loss)
+                
+                print(f"  Cliente {client_id}: acc={accuracy:.2f}%, loss={loss:.4f}")
+            
+            # Calcular médias
             avg_accuracy = np.mean(accuracies)
             avg_loss = np.mean(losses)
             
+            # Armazenar métricas
             self.round_accuracies.append(avg_accuracy)
             self.round_losses.append(avg_loss)
             
-            print(f"Rodada {server_round} - Power of Choice - Acurácia média: {avg_accuracy:.2f}%, Loss média: {avg_loss:.4f}")
-            
-            # Debug: mostrar estatísticas do histórico
-            total_clients_with_history = len(self.selection_strategy.client_losses)
-            print(f"  Histórico: {total_clients_with_history} clientes com dados de loss")
+            print(f"Rodada {server_round} - Power of Choice - Acurácia Média: {avg_accuracy:.2f}%, Loss Média: {avg_loss:.4f}")
+            print(f"  Clientes com histórico: {len(self.selection_strategy.client_losses)}")
+        
+        # Agregação padrão (sempre deve ser chamada)
+        aggregated_parameters, aggregated_metrics = super().aggregate_fit(
+            server_round, results, failures
+        )
         
         return aggregated_parameters, aggregated_metrics 

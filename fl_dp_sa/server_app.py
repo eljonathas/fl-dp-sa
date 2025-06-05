@@ -1,6 +1,7 @@
 """fl_dp_sa: Flower Example using Differential Privacy and Secure Aggregation."""
 
 import torch
+import numpy as np
 import flwr as fl
 from flwr.server import ServerApp, ServerConfig
 from flwr.common import Context
@@ -16,14 +17,24 @@ def get_evaluate_fn(dataset: FMNISTNonIID):
     
     def evaluate_fn(server_round: int, parameters, config: Dict[str, any]) -> Optional[Tuple[float, Dict[str, any]]]:
         """Avalia o modelo global no conjunto de teste"""
-        # Criar modelo e definir parâmetros
+        # Criar modelo
         model = FMNISTNet()
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model.to(device)
         
-        # Definir parâmetros do modelo
-        params_dict = zip(model.state_dict().keys(), parameters)
-        state_dict = {k: torch.tensor(v) for k, v in params_dict}
-        model.load_state_dict(state_dict, strict=True)
+        # Definir parâmetros do modelo - CORRIGIDO
+        if parameters:
+            # Converter parameters de ndarrays para tensors
+            params_dict = {}
+            param_names = list(model.state_dict().keys())
+            
+            for i, (param_name, param_value) in enumerate(zip(param_names, parameters)):
+                if isinstance(param_value, np.ndarray):
+                    params_dict[param_name] = torch.tensor(param_value, dtype=torch.float32)
+                else:
+                    params_dict[param_name] = torch.tensor(param_value, dtype=torch.float32)
+            
+            model.load_state_dict(params_dict, strict=True)
         
         # Obter dados de teste
         test_loader = dataset.get_test_data(batch_size=64)
@@ -55,8 +66,8 @@ def get_evaluate_fn(dataset: FMNISTNonIID):
 def create_server_app(strategy_name: str = "fedavg"):
     """Cria o app do servidor com a estratégia especificada"""
     
-    # Criar dataset
-    dataset = FMNISTNonIID(num_clients=50, alpha=0.5)
+    # Criar dataset (menos clientes para melhor distribuição de dados)
+    dataset = FMNISTNonIID(num_clients=20, alpha=0.1)  # Menos non-IID e menos clientes
     
     # Criar modelo inicial
     model = FMNISTNet()
@@ -65,24 +76,24 @@ def create_server_app(strategy_name: str = "fedavg"):
     # Selecionar estratégia
     if strategy_name.lower() == "fedavg":
         strategy = FedAvgStrategy(
-            fraction_fit=0.2,  # 20% dos clientes por rodada (10 de 50)
-            fraction_evaluate=0.2,
-            min_fit_clients=10,
-            min_evaluate_clients=10,
-            min_available_clients=50,
+            fraction_fit=0.5,  # 50% dos clientes por rodada (10 de 20)
+            fraction_evaluate=0.5,
+            min_fit_clients=8,
+            min_evaluate_clients=8,
+            min_available_clients=20,
             evaluate_fn=get_evaluate_fn(dataset),
             initial_parameters=fl.common.ndarrays_to_parameters(initial_parameters),
         )
     elif strategy_name.lower() == "powerofchoice":
         strategy = PowerOfChoiceStrategy(
-            fraction_fit=0.2,  # 20% dos clientes por rodada (10 de 50)
-            fraction_evaluate=0.2,
-            min_fit_clients=10,
-            min_evaluate_clients=10,
-            min_available_clients=50,
+            fraction_fit=0.5,  # 50% dos clientes por rodada (10 de 20)
+            fraction_evaluate=0.5,
+            min_fit_clients=8,
+            min_evaluate_clients=8,
+            min_available_clients=20,
             evaluate_fn=get_evaluate_fn(dataset),
             initial_parameters=fl.common.ndarrays_to_parameters(initial_parameters),
-            d=20,  # Power of choice com d=20 (mais candidatos para melhor seleção)
+            d=15,  # Power of choice com d=15 candidatos
         )
     else:
         raise ValueError(f"Estratégia desconhecida: {strategy_name}")
